@@ -1,6 +1,7 @@
 package smp2p_test
 
 import (
+	"fmt"
 	"math/rand"
 	"sync"
 	"testing"
@@ -21,20 +22,25 @@ func TestGetConnectionParallel(t *testing.T) {
 	t.Parallel()
 
 	// create a pool
-	p2pManager := smp2p.NewP2PManager()
+	p2pManager := smp2p.NewP2PManager(smp2p.NewConnection)
 
 	wg := &sync.WaitGroup{}
-
 	for i := 0; i < 100; i++ {
 		wg.Add(1)
-		go func() {
+		go func(id int) {
 			defer wg.Done()
+
+			// add a random connection time.
+			connectionTime := time.Millisecond * time.Duration(rand.Intn(1000))
+			time.Sleep(connectionTime)
+
 			ipAddress := gofakeit.IPv4Address()
 			conn := p2pManager.GetConnection(ipAddress)
-			require.NotNil(t, conn)
-		}()
-	}
+			c := <-conn
+			fmt.Printf("Connection ID %d Ready Address: %s- %v\n", id, c.IPAddress(), connectionTime)
 
+		}(i)
+	}
 	wg.Wait()
 }
 
@@ -43,7 +49,7 @@ func TestOnNewRemoteIConnectionParallel(t *testing.T) {
 	t.Parallel()
 
 	// create a pool
-	p2pManager := smp2p.NewP2PManager()
+	p2pManager := smp2p.NewP2PManager(smp2p.NewConnection)
 
 	wg := &sync.WaitGroup{}
 
@@ -67,22 +73,40 @@ func TestOnNewRemoteIConnectionParallel(t *testing.T) {
 func TestShutdownParallel(t *testing.T) {
 	t.Parallel()
 
+	mockLocalConnection := func(ipAddress string) smp2p.IConnection {
+		mockConnection := &mockc.IConnection{}
+		mockConnection.On("Close").Return(nil).Times(1)
+		return mockConnection
+	}
+
 	// create a new pool
-	p2pManager := smp2p.NewP2PManager()
+	p2pManager := smp2p.NewP2PManager(mockLocalConnection)
 
 	wg := &sync.WaitGroup{}
 
 	// add connections concurently
 	for i := 0; i < 100; i++ {
 		wg.Add(1)
-		go func() {
-			remoteAddress, conn := newMockConnection()
-			p2pManager.OnNewRemoteIConnection(remoteAddress, conn)
-		}()
+		if i%2 == 0 {
+			go func() {
+				defer wg.Done()
+				remoteAddress, conn := newMockConnection()
+				p2pManager.OnNewRemoteIConnection(remoteAddress, conn)
+			}()
+		} else {
+			go func() {
+				defer wg.Done()
+				ipAddress := gofakeit.IPv4Address()
+				conn := p2pManager.GetConnection(ipAddress)
+				<-conn
+			}()
+		}
 	}
 
+	wg.Wait()
 	// shutdow the peer
 	p2pManager.Shutdown()
+	require.Empty(t, p2pManager.GetConnections())
 }
 
 // generate a ransom mock connection for tests

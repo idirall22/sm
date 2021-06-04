@@ -4,10 +4,13 @@ package smp2p
 type IConnection interface {
 	Open() error
 	Close() error
+	IPAddress() string
 }
 
+type LocalConnection func(ipAddress string) IConnection
+
 // NewConnection create a new connection.
-func NewConnection(ipAddress string) *Connection {
+func NewConnection(ipAddress string) IConnection {
 	return &Connection{
 		ipAddress: ipAddress,
 	}
@@ -21,6 +24,11 @@ type Connection struct {
 // Open new connection.
 func (c *Connection) Open() error {
 	return nil
+}
+
+// Open new connection.
+func (c *Connection) IPAddress() string {
+	return c.ipAddress
 }
 
 // Close connection.

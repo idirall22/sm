@@ -23,6 +23,20 @@ func (_m *IConnection) Close() error {
 	return r0
 }
 
+// IPAddress provides a mock function with given fields:
+func (_m *IConnection) IPAddress() string {
+	ret := _m.Called()
+
+	var r0 string
+	if rf, ok := ret.Get(0).(func() string); ok {
+		r0 = rf()
+	} else {
+		r0 = ret.Get(0).(string)
+	}
+
+	return r0
+}
+
 // Open provides a mock function with given fields:
 func (_m *IConnection) Open() error {
 	ret := _m.Called()

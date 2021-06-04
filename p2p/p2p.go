@@ -13,37 +13,52 @@ type P2P interface {
 }
 
 // NewP2PManager create a new p2p manager.
-func NewP2PManager() *P2PManager {
+func NewP2PManager(localConnection LocalConnection) *P2PManager {
 	return &P2PManager{
-		connections: make(map[string]IConnection),
-		m:           &sync.RWMutex{},
+		localConnection: localConnection,
+		connections:     map[string]IConnection{},
+		m:               &sync.RWMutex{},
 	}
 }
 
 // P2PManager implementation of the p2p manager interface.
 type P2PManager struct {
-	connections map[string]IConnection
-	m           *sync.RWMutex
+	localConnection LocalConnection
+	connections     map[string]IConnection
+	m               *sync.RWMutex
 }
 
 // GetConnection return existing
 // connection or create one and store it, this caller should be
 // blocked until the connection is returned (thread safe).
-func (p *P2PManager) GetConnection(ipAddress string) IConnection {
-	p.m.Lock()
-	defer p.m.Unlock()
+func (p *P2PManager) GetConnection(ipAddress string) chan IConnection {
 
-	// check if a connection already exists.
-	conn, ok := p.connections[ipAddress]
-	if ok {
-		return conn
+	// add a connection channel
+	connChan := make(chan IConnection)
+
+	{
+		p.m.RLock()
+		defer p.m.RUnlock()
+
+		// check if a connection already exists.
+		conn, ok := p.connections[ipAddress]
+		if ok {
+			connChan <- conn
+		}
 	}
 
-	// create a new connection
-	newConn := NewConnection(ipAddress)
-	p.connections[ipAddress] = newConn
+	// run a concurrent function that create a new connection then store it.
+	go func(ipAddress string) {
+		conn := p.localConnection(ipAddress)
 
-	return newConn
+		p.m.Lock()
+		defer p.m.Unlock()
+		p.connections[ipAddress] = conn
+
+		connChan <- conn
+	}(ipAddress)
+
+	return connChan
 }
 
 // OnNewRemoteIConnection A callback function that is called whenever a remote peer
@@ -61,7 +76,9 @@ func (p *P2PManager) OnNewRemoteIConnection(remotePeer string, newConn IConnecti
 			return err
 		}
 	}
+
 	p.connections[remotePeer] = newConn
+
 	return nil
 }
 
@@ -79,4 +96,8 @@ func (p *P2PManager) Shutdown() {
 		}
 		delete(p.connections, remoteAdd)
 	}
+}
+
+func (p *P2PManager) GetConnections() map[string]IConnection {
+	return p.connections
 }
